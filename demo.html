@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>vi</title>
+    </head>
+    <body>
+        <vi-window rows="25" cols="120">This component adds a vi-window element that provides editing of text as as in vi. It will display its text contents, as with a textarea, and provides vi editing operations and modes.
+
+* It is possible to enter insert mode with i, and to exit it with Escape.
+* In normal mode, the cursor can be moved with the arrow keys, or with h/j/k/l, or wordwise with w/b/e.
+* Lines can be deleted with dd, or yanked with yy, and pasted with p.
+* Visual mode with v, visual-line mode with V, or visual-block mode with CTRL-V can be used to select text.
+* In visual mode, d will delete the selection.
+* In visual-block mode, c will change the selection, or I will insert before it.
+
+In addition to POSIX vi, this component includes extensions from vim and elsewhere:
+* Visual character, line, and block modes with v/V/CTRL-V
+  * c/d/y will operate on the selection
+  * I/A will insert before/after the selection across multiple lines in block mode
+  * ap or ip will select the current paragraph
+* The + and * registers access the system clipboard
+* Macros are recorded into registers with q and executed with @
+* An undo and redo stack is accessed through u and CTRL-R
+* Multiple simultaneous cursors with CTRL-L j/k/J/K or visual CTRL-L/I/A/C
+  * In visual character mode, CTRL-L will add a separate cursor selecting the next occurrence of the selection.
+  * In normal mode, CTRL-L j/k extend the cursor below or above, and J/K skip over lines if given a count.
+
+It supports the POSIX vi commands (see https://pubs.opengroup.org/onlinepubs/9699919799/utilities/vi.html) except:
+* Shell command (!)
+* Edit alternate (CTRL-^)
+* ex mode (Q)
+* Redraw (CTRL-R); uses this for redo as in vim
+* Redisplay (CTRL-L); uses this for cursor commands
+* Z exit commands (useless)
+* CTRL-N, CTRL-W, CTRL-T; these are captured by the browser
+* The insert-mode CTRL commands
+* Section motions ([[ / ]])
+
+
+While primarily for plain text, it is possible to include
+HTML <a href="#tags">links</a> within the body, which will
+act as tag names.
+
+In the same way, <a name="tags">an anchor with a name</a> is
+a tag, and CTRL-] will jump to it from either an explici link
+or a word matching that name.
+        </vi-window>
+<script src="vi.js"></script>
+<style>
+vi-window {
+    /* The display can be customised through CSS variables */
+    /* Black on white: */
+    /*
+    --text: black;
+    --background: white;
+    */
+    /* Blue cursor: */
+    /*     
+    --cursor: cyan;
+    --cursor-text: red;
+    */
+    margin: 0;
+}
+</style>
+    </body>
+</html>

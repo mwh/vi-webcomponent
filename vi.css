@@ -1,0 +1,56 @@
+:host {
+    --background: black;
+    --text: white;
+    --cursor: white;
+    --cursor-text: black;
+    --selected: #ccf;
+    --selected-text: black;
+    --highlighted: #040;
+    --highlighted-text: white;
+}
+.vi-window {
+    display: grid;
+    grid-auto-columns: 1ch;
+    grid-auto-flow: row;
+    font-family: monospace;
+    background: var(--background);
+    color: var(--text);
+    width: fit-content;
+    padding: 1px;
+    font-size: 13px;
+}
+
+.vi-char {
+    display: inline-block;
+    width: 1ch;
+    height: 1lh;
+
+    text-align: center;
+    cursor:default;
+}
+
+.vi-char.selected {
+    background-color: var(--selected);
+    color: var(--selected-text);
+}
+
+.vi-char.cursor {
+    background-color: var(--cursor);
+    color: var(--cursor-text);
+}
+
+
+.mode-insert .vi-char.cursor {
+    background: var(--background);
+    color: var(--text);
+    border-left: 1px solid var(--selected);
+}
+
+.vi-char.link {
+    text-decoration: underline;
+}
+
+.vi-char.highlight:not(.selected) {
+    background: var(--highlighted);
+    color: var(--highlighted-text);
+}
