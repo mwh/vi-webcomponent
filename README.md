@@ -2,7 +2,7 @@ vi-window web component
 =======================
 
 This component adds a <vi-window> element that provides editing of text as
-as in vi. <vi-window name="xxx"> can be used within a form, and by default
+in vi. <vi-window name="xxx"> can be used within a form, and by default
 it will display its text contents, like a textarea.
 
 ```html
@@ -40,7 +40,7 @@ In addition, it includes extensions from vim or elsewhere:
 * Macros recorded into registers with q and executed with @
 * An undo and redo stack accessed through u and CTRL-R
 * The * and # word-under-cursor searches
-* Multiple simultaneous cursors with CTRL-L j/k/J/K or visual CTRL-L/I/A/C
+* Multiple simultaneous cursors with CTRL-L j/k/[count]J[count]/K or visual CTRL-L/I/A/C
 * Mouse-click positioning of the cursor
 
 Surrogate pairs in the text content are handled, and it has some ability
