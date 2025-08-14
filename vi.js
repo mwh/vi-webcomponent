@@ -1670,12 +1670,12 @@ class ViCursor {
     }
 
     move(line, column) {
-        if (line != this.#line)
-            this.#savedLine = this.#operations.copyLine(line);
         if (line < 1)
             line = 1;
         if (line >= this.#buffer.lines.length)
             line = this.#buffer.lines.length;
+        if (line != this.#line)
+            this.#savedLine = this.#operations.copyLine(line);
         this.#line = line;
         if (column > this.#buffer.lines[line - 1].length + (this.#mode == 'insert' ? 1 : 0))
             column = this.#buffer.lines[line - 1].length + (this.#mode == 'insert' ? 1 : 0);
