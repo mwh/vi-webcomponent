@@ -4082,6 +4082,12 @@ class MultiCursor {
         return {text: results.map(r => r.text.flat()), linewise: results[0].linewise};
     }
 
+    toggleCase(operand) {
+        for (let cursor of this.#cursors) {
+            cursor.toggleCase(operand);
+        }
+    }
+
     pop() {
         this.#cursors.pop();
     }
