@@ -5,7 +5,8 @@
         <title>vi</title>
     </head>
     <body>
-        <vi-window rows="25" cols="120">This component adds a vi-window element that provides editing of text as as in vi. It will display its text contents, as with a textarea, and provides vi editing operations and modes.
+      <form>
+        <vi-window rows="25" cols="120" name="example">This component adds a vi-window element that provides editing of text as as in vi. It will display its text contents, as with a textarea, and provides vi editing operations and modes.
 
 * It is possible to enter insert mode with i, and to exit it with Escape.
 * In normal mode, the cursor can be moved with the arrow keys, or with h/j/k/l, or wordwise with w/b/e.
@@ -46,7 +47,17 @@ In the same way, <a name="tags">an anchor with a name</a> is
 a tag, and CTRL-] will jump to it from either an explicit link
 or a word matching that name.
         </vi-window>
+      </form>
 <script src="vi.js"></script>
+<script>
+  document.querySelector('vi-window').addEventListener('write', (event) => localStorage.setItem('vi:' + event.detail.name, event.detail.text));
+  document.querySelector('vi-window').addEventListener('ex', function(event) {
+    if (event.detail.command == 'greet') {
+      this.value = 'Hello, world!';
+      event.preventDefault();
+    }
+  });
+</script>
 <style>
 vi-window {
     /* The display can be customised through CSS variables */

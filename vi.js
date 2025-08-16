@@ -1,48 +1,635 @@
-// Copyright (C) 2024 Michael Homer
+// Copyright (C) 2024, 2025 Michael Homer
 
-class ViWindow extends HTMLElement {
-    static formAssociated = true;
-    static observedAttributes = ['rows', 'cols', 'value'];
-    #buffer
-    #view
+class TerminalModel {
+    #lines = []
+    #cols
+    #rows
+
+    #cellsStack = [];
+
+    #cursor = {row: 0, col: 0, hidden: false}
+    #application
+    #applicationStack = []
+    #subscribers = []
+
+
+    #cellWidth = 0
+
+
+    constructor(rows, cols) {
+        this.#cols = cols;
+        this.#rows = rows;
+        this.#recreate()
+    }
+
+    #recreate() {
+        let lines = [];
+        for (let r = 0; r < this.#rows; r++) {
+            let row = [];
+            for (let c = 0; c < this.#cols; c++) {
+                row.push({symbol: null, invert: false, boxed: false, background: '', foreground: ''});
+            }
+            lines.push(row);
+        }
+        this.#lines = lines;
+        this.#lines[0][0] = {symbol: '>'};
+    }
+
+    get lines() {
+        return this.#lines
+    }
+
+    get cols() {
+        return this.#cols;
+    }
+
+    set cols(val) {
+        this.#cols = val;
+        this.#recreate();
+    }
+
+    get rows() {
+        return this.#rows;
+    }
+
+    set rows(val) {
+        this.#rows = val;
+        this.#recreate();
+    }
+
+    setSymbol(y, x, symbol) {
+        this.#lines[y][x].symbol = symbol;
+    }
+
+    setInvert(y, x, invert) {
+        this.#lines[y][x].invert = invert;
+    }
+
+    setBoxed(y, x, boxed) {
+        this.#lines[y][x].boxed = boxed;
+    }
+
+    setBackground(y, x, background) {
+        this.#lines[y][x].background = background;
+    }
+
+    setForeground(y, x, foreground) {
+        this.#lines[y][x].foreground = foreground;
+    }
+
+    setLineLeft(y, x, lineLeft) {
+        this.#lines[y][x].lineLeft = lineLeft;
+    }
+
+    useAlternateBuffer() {
+        this.#cellsStack.push(this.lines);
+        this.#recreate();
+        return this.lines;
+    }
+
+    restoreBuffer() {
+        this.#lines = this.#cellsStack.pop();
+    }
+
+    set cellWidth(value) {
+        this.#cellWidth = value;
+    }
+
+    get cellWidth() {
+        return this.#cellWidth;
+    }
+
+    subscribe(callback) {
+        this.#subscribers.push(callback);
+    }
+
+    notify() {
+        for (const callback of this.#subscribers) {
+            callback();
+        }
+    }
+
+    writeText(text, moveCursor = true) {
+        let originalCursor = {...this.#cursor};
+        for (let i = 0; i < text.length; i++) {
+            if (text[i] == '\n') {
+                this.setCursor(this.#cursor.row + 1, 0);
+                continue;
+            }
+            this.setSymbol(this.#cursor.row, this.#cursor.col, text[i]);
+            this.#advanceCursor();
+        }
+        if (!moveCursor) {
+            this.setCursor(originalCursor.row, originalCursor.col);
+        }
+    }
+
+    writeLine(text) {
+        if (this.#cursor.col > 0) {
+            this.setCursor(this.#cursor.row + 1, 0);
+        }
+        this.writeText(text);
+        this.setCursor(this.#cursor.row + 1, 0);
+    }
+
+    nextLine(onlyIfNonEmpty) {
+        if (onlyIfNonEmpty && this.#cursor.col === 0) {
+            return;
+        }
+        this.setCursor(this.#cursor.row + 1, 0);
+    }
+
+    clearLine() {
+        for (let col = 0; col < this.cols; col++) {
+            this.setSymbol(this.#cursor.row, col, null);
+        }
+        this.setCursor(this.#cursor.row, 0);
+    }
+
+    #advanceCursor() {
+        if (this.#cursor.col >= this.cols - 1) {
+            this.setCursor(this.#cursor.row + 1, 0);
+        } else {
+            this.setCursor(this.#cursor.row, this.#cursor.col + 1);
+        }
+    }
+
+    setCursor(row, col) {
+        if (!this.#cursor.hidden) {
+            this.setInvert(this.#cursor.row, this.#cursor.col, false);
+        }
+        if (row === undefined)
+            row = this.#cursor.row;
+        if (row >= this.rows) {
+            for (let i = 0; i < this.rows - 1; i++) {
+                this.lines[i] = [...this.lines[i + 1]];
+            }
+            for (let i = 0; i < this.lines[this.rows - 1].length; i++) {
+                this.lines[this.rows - 1][i] = {symbol: null, invert: false};
+            }
+            row = this.rows - 1;
+        }
+        this.#cursor = {...this.#cursor, row, col};
+        if (!this.#cursor.hidden) {
+            this.setInvert(row, col, true);
+        }
+    }
+
+    hideCursor() {
+        this.setInvert(this.#cursor.row, this.#cursor.col, false);
+        this.#cursor.hidden = true;
+    }
+
+    keyDown(key, event) {
+        if (this.#application)
+            this.#application.keyDown(key, event);
+    }
+
+    pushApplication(app) {
+        if (this.#application) {
+            this.#applicationStack.push(this.#application);
+            this.#application.pause();
+        }
+        this.#application = app;
+    }
+
+    endApplication(app) {
+        console.log(`Ending application: ${app}`);
+        if (this.#application === app) {
+            this.#application = this.#applicationStack.pop();
+            this.#application.resume();
+        }
+    }
+
+    click(event, cx, cy) {
+        if (this.#application) {
+            this.#application.click(event, cx, cy);
+        }
+    }
+}
+
+
+class LineInProgress {
+    #text = '';
+    #cursor = 0;
+    #callbacks = [];
+
+    #completionPromises = [];
+
+    get text() {
+        return this.#text;
+    }
+
+    get cursor() {
+        return this.#cursor;
+    }
+
+    set cursor(value) {
+        this.#cursor = value;
+    }
+
+    set text(value) {
+        this.#text = value;
+        this.notify();
+    }
+
+    append(text) {
+        this.#text += text;
+        this.notify();
+    }
+
+    set cursor(value) {
+        this.#cursor = value;
+        this.notify();
+    }
+
+    clear() {
+        this.#text = '';
+        this.#cursor = 0;
+    }
+
+    endInput() {
+        this.#text = null;
+        this.complete();
+        this.#text = '';
+    }
+
+    complete() {
+        for (const resolve of this.#completionPromises) {
+            resolve(this.#text);
+        }
+        this.#completionPromises = [];
+    }
+
+    whenComplete() {
+        return new Promise((resolve) => {
+            this.#completionPromises.push(resolve);
+        });
+    }
+
+    subscribe(callback) {
+        this.#callbacks.push(callback);
+    }
+
+    notify() {
+        for (const callback of this.#callbacks) {
+            callback();
+        }
+    }
+}
+
+
+class Ambience {
+    #give
+    #receive
+    #getResource
+    #hostElement
+
+    #line = new LineInProgress();
+
+    #endResolve
+    #endPromise
+
+    constructor({give, receive, getResource, hostElement}) {
+        this.#give = give;
+        this.#receive = receive;
+        this.#getResource = getResource;
+        this.#hostElement = hostElement;
+        let {promise, resolve} = Promise.withResolvers();
+        this.#endPromise = promise;
+        this.#endResolve = resolve;
+    }
+
+    async give(item) {
+        await this.#give(item);
+    }
+
+    async receive() {
+        return this.#receive();
+    }
+
+    async getResource(name) {
+        return this.#getResource(name);
+    }
+
+    get line() {
+        return this.#line;
+    }
+
+    end() {
+        this.#endResolve();
+    }
+
+    writeText() {
+
+    }
+
+    clearLine() {
+
+    }
+
+    get hostElement() {
+        return this.#hostElement;
+    }
+
+    startApplication(app) {
+        app.start();
+    }
+
+    derive() {
+        return new Ambience(this._props());
+    }
+
+    _props() {
+        return {
+            give: this.#give,
+            receive: this.#receive,
+            getResource: this.#getResource,
+            hostElement: this.#hostElement,
+        };
+    }
+
+    get done() {
+        return this.#endPromise;
+    }
+}
+
+
+class TerminalAmbience extends Ambience {
+    #terminal
+    #application
+
+    constructor(terminal, conf={}) {
+        super({
+            ...conf,
+            give: (item) => { this.#terminal.writeLine(item); this.#terminal.notify(); },
+            receive: () => {
+                terminal.nextLine(true);
+                this.line.clear();
+                return this.line.whenComplete();
+            },
+            getResource: (name) => {
+                return null;
+            }
+        });
+        this.#terminal = terminal;
+        this.line.subscribe(() => {
+            this.#terminal.clearLine();
+            this.#terminal.writeText(this.line.text);
+            this.#terminal.setCursor(undefined, this.line.cursor);
+            this.#terminal.notify();
+        });
+    }
+
+    get terminal() {
+        return this.#terminal;
+    }
+
+    end() {
+        this.#terminal.endApplication(this.#application);
+        super.end();
+    }
+
+    writeText(text) {
+        this.#terminal.writeText(text);
+    }
+
+    clearLine() {
+        this.#terminal.clearLine();
+    }
+
+    startApplication(app) {
+        this.#application = app;
+        this.#terminal.pushApplication(app);
+        app.start();
+    }
+
+    derive() {
+        return new TerminalAmbience(this.#terminal, this._props());
+    }
+
+    _props() {
+        return {...super._props(), terminal: this.#terminal};
+    }
+}
+
+class TerminalApplication {
+    #ambience
+
+    #eventListeners
+
+    constructor(ambience) {
+        this.#ambience = ambience;
+        this.#eventListeners = new Map();
+    }
+
+    keyDown(key, event) {
+        if (key == 'Enter') {
+            this.#ambience.line.complete();
+        } else if (event.ctrlKey && key == 'd' && this.#ambience.line.text === '') {
+            this.#ambience.line.endInput();
+        } else if (key == 'Control' || key == 'Shift' || key == 'Meta' || key == 'Alt') {
+
+        } else {
+            this.#ambience.line.append(key);
+            this.#ambience.line.notify();
+        }
+    }
+
+    click(cx, cy) {
+
+    }
+
+    start() {}
+
+    pause() {}
+
+    resume() {}
+
+    end() {
+        this.#ambience.end(this);
+    }
+
+    get done() {
+        return this.#ambience.done;
+    }
+
+    addEventListener(type, listener) {
+        if (!this.#eventListeners.has(type)) {
+            this.#eventListeners.set(type, []);
+        }
+        this.#eventListeners.get(type).push(listener);
+    }
+
+    removeEventListener(type, listener) {
+        if (this.#eventListeners.has(type)) {
+            const listeners = this.#eventListeners.get(type);
+            const index = listeners.indexOf(listener);
+            if (index !== -1) {
+                listeners.splice(index, 1);
+            }
+        }
+    }
+
+    dispatchEvent(type, {detail, ...rest}) {
+        let ret = true;
+        if (this.#eventListeners.has(type)) {
+            for (const listener of this.#eventListeners.get(type)) {
+                listener({ detail, ...rest, preventDefault() { ret = false;} });
+            }
+        }
+        return ret;
+    }
+
+}
+
+
+class ConsoleWindow extends HTMLElement {
+    static observedAttributes = ['rows', 'cols'];
     #shadowRoot
-    #cells = []
-    #mode = 'normal'
     #container
-    #cursor
-    #command;
-    #elementInternals
     #rows = 25
     #cols = 80
-    #lastPattern = null;
-    #lastSubstitution = null;
-    #lastSearchBackward = false;
-    #lastChangeCommand = null;
-    #macroRegister = null;
-    constructor(config={}) {
+    #cells = []
+    #cellModel = new TerminalModel(25, 80)
+
+    constructor() {
         super();
-        this.registers = {};
-        for (let a of 'abcdefghijklnopqrstuvwxyz0123456789"') {
-            this.registers[a] = {text: [], linewise: false};
-        }
-        this.#buffer = new ViBuffer(this.childNodes, this.registers);
-        this.#view = new ViBufferView(this.#buffer, 0, this.#rows - 2);
-        this.#cursor = this.#buffer.getCursor();
-        this.#command = new ViCommand();
+        this.#cellModel.subscribe(this.redraw.bind(this));
+    }
+
+    useApplication(constructor, args=[], ...rest) {
+        let amb = new TerminalAmbience(this.#cellModel);
+        let app = new constructor(amb, args, ...rest);
+        amb.startApplication(app);
+        return app;
+    }
+
+    setCellModel(model) {
+        this.#cellModel = model;
+        model.subscribe(this.redraw.bind(this));
+    }
+
+    get terminalModel() {
+        return this.#cellModel;
     }
 
     connectedCallback() {
         this.#shadowRoot = this.attachShadow({mode:'open'});
-        this.#elementInternals = this.attachInternals();
-        this.#elementInternals.setFormValue(this.#buffer.toString());
+        this.#container = document.createElement('div');
+        this.#container.classList.add('console-window');
+        this.#shadowRoot.appendChild(this.#container);
         let link = document.createElement('link');
         link.setAttribute('rel', 'stylesheet');
         link.setAttribute('href', 'vi.css');
         this.#shadowRoot.appendChild(link);
-        let container = document.createElement('div');
-        this.#container = container;
-        container.classList.add('vi-window');
-        this.#shadowRoot.appendChild(container);
+        for (let y = 0; y < this.#rows; y++) {
+            let row = [];
+            this.#cells.push(row);
+            for (let x = 0; x < this.#cols; x++) {
+                let charSpan = document.createElement('span');
+                charSpan.classList.add('vi-char');
+                this.#container.appendChild(charSpan);
+                charSpan.style.gridRow = y + 1;
+                charSpan.style.gridColumn = x + 1;
+                row.push(charSpan);
+                charSpan.addEventListener('click', (event) => {
+                    this.#onClick(event, x + 1, y + 1);
+                });
+            }
+        }
+        this.#cellModel.cellWidth = this.#container.clientWidth / this.#cols;
+        setTimeout(() => {
+            this.#cellModel.cellWidth = this.#container.childNodes[0].clientWidth + 1;;
+        });
+        this.redraw();
+        this.tabIndex = -1;
+        this.addEventListener('keydown', this.#onKeyDown.bind(this));
+    }
+
+    attributeChangedCallback(name, oldvalue, newvalue) {
+        if (name == 'rows') {
+            this.rows = newvalue|0;
+        } else if (name == 'cols') {
+            this.cols = newvalue|0;
+        }
+    }
+
+    #onClick(event, cx, cy) {
+        this.terminalModel.click(event, cx, cy);
+    }
+
+    redraw() {
+        let range = this.#cellModel.lines;
+        for (let y = 0; y < range.length; y++) {
+            if (!this.#cells[y]) break;
+            for (let x = 0; x < this.#cols; x++) {
+                let charSpan = this.#cells[y][x];
+                charSpan.style.background = '';
+                charSpan.style.width = '';
+                charSpan.style.height = '';
+                if (charSpan.hasImage) {
+                    charSpan.style.gridRow = y + 1;
+                    charSpan.style.gridColumn = x + 1;
+                    charSpan.style.zIndex = '';
+                    charSpan.hasImage = false;
+                }
+                if (range[y][x].background) {
+                    charSpan.style.background = range[y][x].background;
+                } else {
+                    charSpan.style.background = 'inherit';
+                }
+                if (range[y][x].foreground) {
+                    charSpan.style.color = range[y][x].foreground;
+                } else {
+                    charSpan.style.color = 'inherit';
+                }
+                if (range[y][x].invert) {
+                    charSpan.style.filter = 'invert(1)';
+                } else {
+                    charSpan.style.filter = '';
+                }
+                if (range[y][x].boxed)
+                    charSpan.style.outline = '1px solid white';
+                else
+                    charSpan.style.outline = '';
+                if (!range[y])
+                    charSpan.textContent = '';
+                else if (x >= range[y].length)
+                    charSpan.textContent = '';
+                else if (range[y][x].image) {
+                    charSpan.style.backgroundImage = `url("${range[y][x].image}")`;
+                    charSpan.style.backgroundSize = "contain";
+                    charSpan.style.width = range[y][x].imageCols + 'ch';
+                    charSpan.style.height = range[y][x].imageRows + 'lh';
+                    charSpan.textContent = '';
+                    charSpan.style.gridRow = (y + 1) + '/ span ' + range[y][x].imageRows;
+                    charSpan.style.gridColumn = (x + 1) + '/ span ' + range[y][x].imageCols;
+                    charSpan.style.zIndex = 1;
+                    charSpan.hasImage = true;
+                } else if (range[y][x].width > 1) {
+                    charSpan.style.zIndex = 1;
+                    charSpan.textContent = range[y][x].symbol;
+                    charSpan.hasImage = true;
+                } else if (range[y][x].tagDest) {
+                    charSpan.classList.add('link');
+                    charSpan.textContent = range[y][x].symbol;
+                } else {
+                    charSpan.classList.remove('link');
+                    charSpan.textContent = range[y][x].symbol;
+                }
+            }
+        }
+    }
+
+    #recreate() {
+        if (!this.#container)
+            return;
+        this.#cells.splice(0);
+        let container = this.#container;
+        this.#container.replaceChildren();
+        this.#cellModel.rows = this.#rows;
+        this.#cellModel.cols = this.#cols;
         for (let y = 0; y < this.#rows; y++) {
             let row = [];
             this.#cells.push(row);
@@ -58,16 +645,12 @@ class ViWindow extends HTMLElement {
                 });
             }
         }
+        this.redraw();
+    }
 
-        this.#cells[0][0].textContent = '';
-        this.#view.cellWidth = this.#cells[0][0].offsetWidth + 1;
-        setTimeout(() => {
-            this.#view.cellWidth = this.#cells[0][0].offsetWidth + 1;
-            this.redraw();
-        }, 0)
-        this.mode = 'normal';
-        this.tabIndex = -1;
-        this.addEventListener('keydown', this.#onKeyDown.bind(this));
+    #onKeyDown(event) {
+        this.#cellModel.keyDown(event.key, event);
+        this.redraw();
     }
 
     attributeChangedCallback(name, oldvalue, newvalue) {
@@ -84,7 +667,7 @@ class ViWindow extends HTMLElement {
 
     set cols(val) {
         this.#cols = val;
-        this.#view.cols = val;
+        this.#cellModel.cols = val;
         this.#recreate();
     }
 
@@ -94,41 +677,65 @@ class ViWindow extends HTMLElement {
 
     set rows(val) {
         this.#rows = val;
-        this.#view.rows = val - 2;
+        this.#cellModel.rows = val;
         this.#recreate();
     }
+}
 
-    get value() {
-        return this.#buffer.toString();
-    }
 
-    set value(val) {
-        this.#buffer.fromString(val);
-        this.redraw();
-    }
+class ViApplication extends TerminalApplication {
+    #buffer
+    #view
+    #cursor
+    #command
+    #mode = 'normal'
+    #macroRegister
+    #lastPattern
+    #lastSearchBackward
+    #lastSubstitution
+    #lastChangeCommand
+    #cells
 
-    #recreate() {
-        if (!this.#container)
-            return;
-        this.#cells.splice(0);
-        let container = this.#container;
-        this.#container.replaceChildren();
-        for (let y = 0; y < this.#rows; y++) {
-            let row = [];
-            this.#cells.push(row);
-            for (let x = 0; x < this.#cols; x++) {
-                let charSpan = document.createElement('span');
-                charSpan.classList.add('vi-char');
-                container.appendChild(charSpan);
-                charSpan.style.gridRow = y + 1;
-                charSpan.style.gridColumn = x + 1;
-                row.push(charSpan);
-                charSpan.addEventListener('click', (event) => {
-                    this.#onClick(event, x + 1, y + 1);
-                });
-            }
+    #noDraw = false
+
+    #ambience
+
+    #terminal
+
+    constructor(ambience, args, initialBody=null) {
+        super(ambience);
+        this.#ambience = ambience
+        this.registers = {};
+        for (let a of 'abcdefghijklnopqrstuvwxyz0123456789"') {
+            this.registers[a] = {text: [], linewise: false};
         }
+        if (args.length > 0) {
+            this.#buffer = new ViBuffer('', this.registers);
+            ambience.getResource(args[0]).then((res) => {
+                if (res) {
+                    res.text().then((text) => {
+                        this.#buffer.fromString(text);
+                        this.redraw();
+                    });
+                }
+            });
+        } else {
+            this.#buffer = new ViBuffer(initialBody ?? 'hello world\nsecond line', this.registers);
+        }
+        this.#cursor = this.#buffer.getCursor();
+        this.#command = new ViCommand();
+    }
+    
+    start() {
+        this.#terminal = this.#ambience.terminal;
+        this.#view = new ViBufferView(this.#buffer, 0, this.#terminal.rows - 2, this.#terminal.cols);
+        this.#view.cellWidth = this.#terminal.cellWidth;
+        this.#cells = this.#terminal.useAlternateBuffer();
         this.redraw();
+    }
+
+    get buffer() {
+        return this.#buffer;
     }
 
     get mode() {
@@ -136,10 +743,7 @@ class ViWindow extends HTMLElement {
     }
 
     set mode(value) {
-        this.#elementInternals.states.clear();
-        this.#elementInternals.states.add(value);
-        this.#container.classList.remove('mode-' + this.#mode);
-        this.#container.classList.add('mode-' + value);
+        this.dispatchEvent('modechange', { oldMode: this.#mode, newMode: value });
         this.#mode = value;
         this.#cursor.mode = value;
     }
@@ -213,10 +817,14 @@ class ViWindow extends HTMLElement {
             this.#cursor.mode = 'normal';
         } else if (text == '' && range) {
             this.#cursor.move(range.end.line, range.end.column);
-        } else if (text == 'w' || text == 'write') {
-            this.dispatchEvent(new CustomEvent('write', {detail: {range: range, text: this.value}, bubbles: true}));
+        } else if (text == 'w' || text == 'write' || text.startsWith('w ')) {
+            this.dispatchEvent('write', {detail: {range, text: this.#buffer.toString(), name: text.slice(2).trim()}, bubbles: true, cancelable: true});
+        } else if (text == 'q') {
+            this.#terminal.restoreBuffer();
+            this.#noDraw = true;
+            this.end();
         } else {
-            if (this.dispatchEvent(new CustomEvent('ex', {detail: {range: range, command: text}, bubbles: true, cancelable: true})))
+            if (this.dispatchEvent('ex', {detail: {range: range, command: text}, bubbles: true, cancelable: true}))
                 this.#displayMessage('Unknown ex command: ' + initText);
         }
     }
@@ -509,7 +1117,6 @@ class ViWindow extends HTMLElement {
         this.mode = 'normal';
         this.submode = null;
         this.#command = new ViCommand();
-        this.#elementInternals.setFormValue(this.#buffer.toString());
     }
 
     enterTextEntryMode(command) {
@@ -644,7 +1251,7 @@ class ViWindow extends HTMLElement {
         } else if (command.operation == 'select') {
             this.#cursor.setVisualOperand(command.operand);
             this.#view.ensureVisible(this.#cursor, !!command.operand.screenMotion);
-        } else if (command.operation == 'normal-mode') {
+        } else if (command.operation == 'normal-mode' || (command.operation == 'visual' && this.submode === null)) {
             this.enterNormalMode();
             this.#cursor.endVisual();
             this.#view.ensureVisible(this.#cursor, true);
@@ -762,7 +1369,7 @@ class ViWindow extends HTMLElement {
         }
     }
 
-    #onKeyDown(event) {
+    keyDown(_, event) {
         event.preventDefault();
         let key = event.key;
         if (key == 'Shift' || key == 'Control' || key == 'Alt' || key == 'Meta') {
@@ -804,7 +1411,7 @@ class ViWindow extends HTMLElement {
         }
     }
 
-    #onClick(event, cx, cy) {
+    click(event, cx, cy) {
         let {x, y, content} = this.#view.at(cx, cy);
         if (event.ctrlKey) {
             if (content.tagDest) {
@@ -828,66 +1435,40 @@ class ViWindow extends HTMLElement {
     }
 
     redraw() {
+        if (this.#noDraw)
+            return;
         this.#view.layOut();
         let range = this.#view.lines;
         let spaceColumn;
         for (let y = 0; y < range.length; y++) {
             if (!this.#cells[y]) break;
-            for (let x = 0; x < this.#cols; x++) {
+            for (let x = 0; x < this.#terminal.cols; x++) {
                 let charSpan = this.#cells[y][x];
+                this.#terminal.setSymbol(y, x, range[y][x]?.symbol ?? '');
                 if (this.#view.cursorAt(this.#cursor, y, x)) {
-                    charSpan.classList.add('cursor');
+                    this.#terminal.setInvert(y, x, true);
+                    this.#terminal.setBackground(y, x, 'inherit');
+                    this.#terminal.setForeground(y, x, 'inherit');
+
+                    //charSpan.classList.add('cursor');
                     if (!spaceColumn) {
                         spaceColumn = range[y][x]?.spaceColumn ?? x;
                     }
-                } else
-                    charSpan.classList.remove('cursor');
-                if (this.#view.selectedAt(this.#cursor, y, x))
-                    charSpan.classList.add('selected');
-                else
-                    charSpan.classList.remove('selected');
-                let highlight = this.#view.highlightAt(this.#cursor, y, x);
-                if (highlight) {
-                    charSpan.classList.add('highlight');
+                } else if (this.#view.selectedAt(this.#cursor, y, x)) {
+                    this.#terminal.setBackground(y, x, '#bbf');
+                    this.#terminal.setForeground(y, x, '#000');
+                    this.#terminal.setInvert(y, x, false);
+                } else if (this.#view.highlightAt(this.#cursor, y, x)) {
+                    this.#terminal.setBackground(y, x, '#040');
+                    this.#terminal.setForeground(y, x, '#fff');
                 } else {
-                    charSpan.classList.remove('highlight');
-                }
-                charSpan.style.background = '';
-                charSpan.style.width = '';
-                charSpan.style.height = '';
-                if (charSpan.hasImage) {
-                    charSpan.style.gridRow = y + 1;
-                    charSpan.style.gridColumn = x + 1;
-                    charSpan.style.zIndex = '';
-                    charSpan.hasImage = false;
-                }
-                if (!range[y])
-                    charSpan.textContent = '';
-                else if (x >= range[y].length)
-                    charSpan.textContent = '';
-                else if (range[y][x].image) {
-                    charSpan.style.backgroundImage = `url("${range[y][x].image}")`;
-                    charSpan.style.backgroundSize = "contain";
-                    charSpan.style.width = range[y][x].imageCols + 'ch';
-                    charSpan.style.height = range[y][x].imageRows + 'lh';
-                    charSpan.textContent = '';
-                    charSpan.style.gridRow = (y + 1) + '/ span ' + range[y][x].imageRows;
-                    charSpan.style.gridColumn = (x + 1) + '/ span ' + range[y][x].imageCols;
-                    charSpan.style.zIndex = 1;
-                    charSpan.hasImage = true;
-                } else if (range[y][x].width > 1) {
-                    charSpan.style.zIndex = 1;
-                    charSpan.textContent = range[y][x].symbol;
-                    charSpan.hasImage = true;
-                } else if (range[y][x].tagDest) {
-                    charSpan.classList.add('link');
-                    charSpan.textContent = range[y][x].symbol;
-                } else {
-                    charSpan.classList.remove('link');
-                    charSpan.textContent = range[y][x].symbol;
+                    this.#terminal.setInvert(y, x, false);
+                    this.#terminal.setBackground(y, x, 'inherit');
+                    this.#terminal.setForeground(y, x, 'inherit');
                 }
             }
         }
+        let lastIndex = this.#cells.length - 1;
         if (this.#message) {
             let message = this.#message;
             let lastRow = this.#cells.at(-1);
@@ -895,13 +1476,13 @@ class ViWindow extends HTMLElement {
                 cell.textContent = '';
             }
             for (let i = 0; i < message.length; i++) {
-                lastRow[i].textContent = message[i];
+                this.#terminal.setSymbol(lastIndex, i, message[i]);
             }
             this.#message = null;
         } else {
-            const width = this.#cols;
+            const width = this.#terminal.cols;
             for (let i = 0; i < width; i++) {
-                this.#cells.at(-1)[i].textContent = ' ';
+                this.#terminal.setSymbol(lastIndex, i, ' ');
             }
             if (this.#mode != 'normal') {
                 let modeStr = '-- ' + this.#mode.toUpperCase();
@@ -910,22 +1491,71 @@ class ViWindow extends HTMLElement {
                 }
                 modeStr += ' --';
                 for (let i = 0; i < modeStr.length; i++) {
-                    this.#cells.at(-1)[i].textContent = modeStr[i];
+                    this.#terminal.setSymbol(lastIndex, i, modeStr[i]);
                 }
             }
             let posStr = this.#cursor.line + ',' + this.#cursor.column
             if (this.#cursor.column != spaceColumn)
                 posStr += '-' + spaceColumn;
             for (let i = 0; i < posStr.length; i++) {
-                this.#cells.at(-1)[width - 20 + i].textContent = posStr[i];
+                this.#terminal.setSymbol(lastIndex, width - 20 + i, posStr[i]);
             }
             let opStr = this.#command.command;
             for (let i = 0; i < opStr.length; i++) {
-                this.#cells.at(-1)[width - 10 + i].textContent = opStr[i];
+                this.#terminal.setSymbol(lastIndex, width - 10 + i, opStr[i]);
             }
+        }
+        this.#terminal.notify();
+    }
+}
+
+
+class ViWindow extends ConsoleWindow {
+    static formAssociated = true;
+    static observedAttributes = ['rows', 'cols', 'value'];
+    #elementInternals
+
+    #viApp
+
+    constructor(config={}) {
+        super(config);
+    }
+
+    connectedCallback() {
+        super.connectedCallback();
+        this.#viApp = this.useApplication(ViApplication, [], this.childNodes);
+        this.#elementInternals = this.attachInternals();
+        this.#elementInternals.setFormValue(this.#viApp.buffer.toString());
+        this.#viApp.addEventListener('modechange', (event) => {
+            this.#elementInternals.setFormValue(this.#viApp.buffer.toString());
+        });
+        this.#viApp.addEventListener('write', (event) => {
+            this.dispatchEvent(new CustomEvent('write', {detail: {...event.detail}, bubbles: true}));
+        });
+        this.#viApp.addEventListener('ex', (event) => {
+            if (!this.dispatchEvent(new CustomEvent('ex', {detail: {range: event.detail.range, command: event.detail.command}, bubbles: true, cancelable: true}))) {
+                event.preventDefault();
+            }
+        });
+    }
+
+    attributeChangedCallback(name, oldvalue, newvalue) {
+        if (name == 'value') {
+            this.value = newvalue;
+        } else {
+            super.attributeChangedCallback(name, oldvalue, newvalue);
         }
     }
 
+    get value() {
+        return this.#viApp.buffer.toString();
+    }
+
+    set value(val) {
+        this.#viApp.buffer.fromString(val);
+        this.#elementInternals.setFormValue(val);
+        this.#viApp.redraw();
+    }
 }
 
 
@@ -995,25 +1625,6 @@ class ViBuffer {
                         }
                     }
                 }
-                // let line = [];
-                // for (let child of node.childNodes) {
-                //     if (child.nodeType == Node.TEXT_NODE) {
-                //         for (let i = 0; i < child.nodeValue.length; i++) {
-                //             line.push(cellFromChar(child.nodeValue[i]));
-                //         }
-                //     } else if (child.nodeType == Node.ELEMENT_NODE) {
-                //         if (child.tagName == 'BR') {
-                //             this.#lines.push(line);
-                //             line = [];
-                //         } else {
-                //             let text = child.textContent;
-                //             for (let i = 0; i < text.length; i++) {
-                //                 line.push(cellFromChar(text[i]));
-                //             }
-                //         }
-                //     }
-                // }
-                // this.#lines.push(line);
             }
         }
         this.#registers = registers;
@@ -3121,6 +3732,7 @@ class ViBufferView {
                     if (!this.#charWidths[cell.symbol]) {
                         // Compute rendered width of this character in cells (best effort)
                         let metrics = ctx.measureText(cell.symbol);
+                        console.log('metrics', metrics.width, this.#cellWidth)
                         this.#charWidths[cell.symbol] = Math.ceil(metrics.width / this.#cellWidth, 1);
                     }
                     cell.width = this.#charWidths[cell.symbol];
@@ -4096,3 +4708,5 @@ class MultiCursor {
 
 
 customElements.define('vi-window', ViWindow);
+
+customElements.define('console-window', ConsoleWindow);
