@@ -1912,6 +1912,7 @@ class ViBuffer {
         if (this.#undoStack.length > 100) {
             this.#undoStack.shift();
         }
+        console.log('undo', this.#undoStack)
     }
 
     undo() {
@@ -3240,9 +3241,9 @@ class ViCursor {
                         let cell = line[j];
                         if (cell.symbol != ' ') {
                             if (cell.symbol == cell.symbol.toUpperCase()) {
-                                cell.symbol = cell.symbol.toLowerCase();
+                                this.#operations.setChar(cell.symbol.toLowerCase(), i, j + 1);
                             } else {
-                                cell.symbol = cell.symbol.toUpperCase();
+                                this.#operations.setChar(cell.symbol.toUpperCase(), i, j + 1);
                             }
                         }
                     }
@@ -3254,9 +3255,9 @@ class ViCursor {
                         let cell = line[j];
                         if (cell.symbol != ' ') {
                             if (cell.symbol == cell.symbol.toUpperCase()) {
-                                cell.symbol = cell.symbol.toLowerCase();
+                                this.#operations.setChar(cell.symbol.toLowerCase(), i, j + 1);
                             } else {
-                                cell.symbol = cell.symbol.toUpperCase();
+                                this.#operations.setChar(cell.symbol.toUpperCase(), i, j + 1);
                             }
                         }
                     }
@@ -3268,9 +3269,9 @@ class ViCursor {
                         let cell = line[i];
                         if (cell.symbol != ' ') {
                             if (cell.symbol == cell.symbol.toUpperCase()) {
-                                cell.symbol = cell.symbol.toLowerCase();
+                                this.#operations.setChar(cell.symbol.toLowerCase(), start.line, i + 1);
                             } else {
-                                cell.symbol = cell.symbol.toUpperCase();
+                                this.#operations.setChar(cell.symbol.toUpperCase(), start.line, i + 1);
                             }
                         }
                     }
@@ -3292,9 +3293,9 @@ class ViCursor {
                             let cell = line[j];
                             if (cell.symbol != ' ') {
                                 if (cell.symbol == cell.symbol.toUpperCase()) {
-                                    cell.symbol = cell.symbol.toLowerCase();
+                                    this.#operations.setChar(cell.symbol.toLowerCase(), i, j + 1);
                                 } else {
-                                    cell.symbol = cell.symbol.toUpperCase();
+                                    this.#operations.setChar(cell.symbol.toUpperCase(), i, j + 1);
                                 }
                             }
                         }
@@ -3304,9 +3305,9 @@ class ViCursor {
                         let cell = line[i];
                         if (cell.symbol != ' ') {
                             if (cell.symbol == cell.symbol.toUpperCase()) {
-                                cell.symbol = cell.symbol.toLowerCase();
+                                this.#operations.setChar(cell.symbol.toLowerCase(), end.line, i + 1);
                             } else {
-                                cell.symbol = cell.symbol.toUpperCase();
+                                this.#operations.setChar(cell.symbol.toUpperCase(), end.line, i + 1);
                             }
                         }
                     }
