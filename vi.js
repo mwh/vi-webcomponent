@@ -4656,6 +4656,12 @@ class MultiCursor {
         }
     }
 
+    replace(char) {
+        for (let cursor of this.#cursors) {
+            cursor.replace(char);
+        }
+    }
+
     extend(opd) {
         let kind = opd.motion;
         if (opd.motion == 'next-selection') {
