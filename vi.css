@@ -1,13 +1,14 @@
 :host {
     --background: black;
     --text: white;
-    --cursor: white;
-    --cursor-text: black;
+    --cursor: var(--text);
+    --cursor-text: var(--background);
     --selected: #ccf;
     --selected-text: black;
-    --highlighted: #040;
-    --highlighted-text: white;
+    --highlighted: color-mix(in oklab, var(--selected), var(--background) 40%);
+    --highlighted-text: var(--text);
 }
+.console-window,
 .vi-window {
     display: grid;
     grid-auto-columns: 1ch;

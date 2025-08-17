@@ -27,7 +27,7 @@ class TerminalModel {
         for (let r = 0; r < this.#rows; r++) {
             let row = [];
             for (let c = 0; c < this.#cols; c++) {
-                row.push({symbol: null, invert: false, boxed: false, background: '', foreground: ''});
+                row.push({symbol: null, invert: false, boxed: false, background: '', foreground: '', classes: []});
             }
             lines.push(row);
         }
@@ -59,6 +59,10 @@ class TerminalModel {
 
     setSymbol(y, x, symbol) {
         this.#lines[y][x].symbol = symbol;
+    }
+
+    setClasses(y, x, classes) {
+        this.#lines[y][x].classes = classes;
     }
 
     setInvert(y, x, invert) {
@@ -156,7 +160,7 @@ class TerminalModel {
 
     setCursor(row, col) {
         if (!this.#cursor.hidden) {
-            this.setInvert(this.#cursor.row, this.#cursor.col, false);
+            this.setClasses(this.#cursor.row, this.#cursor.col, []);
         }
         if (row === undefined)
             row = this.#cursor.row;
@@ -165,18 +169,18 @@ class TerminalModel {
                 this.lines[i] = [...this.lines[i + 1]];
             }
             for (let i = 0; i < this.lines[this.rows - 1].length; i++) {
-                this.lines[this.rows - 1][i] = {symbol: null, invert: false};
+                this.lines[this.rows - 1][i] = {symbol: null, classes: []};
             }
             row = this.rows - 1;
         }
         this.#cursor = {...this.#cursor, row, col};
         if (!this.#cursor.hidden) {
-            this.setInvert(row, col, true);
+            this.setClasses(row, col, ['cursor']);
         }
     }
 
     hideCursor() {
-        this.setInvert(this.#cursor.row, this.#cursor.col, false);
+        this.setClasses(this.#cursor.row, this.#cursor.col, []);
         this.#cursor.hidden = true;
     }
 
@@ -574,15 +578,20 @@ class ConsoleWindow extends HTMLElement {
                     charSpan.style.zIndex = '';
                     charSpan.hasImage = false;
                 }
+                if (range[y][x].classes && range[y][x].classes.length > 0) {
+                    charSpan.className = 'vi-char ' + range[y][x].classes.join(' ');
+                } else {
+                    charSpan.className = 'vi-char';
+                }
                 if (range[y][x].background) {
                     charSpan.style.background = range[y][x].background;
                 } else {
-                    charSpan.style.background = 'inherit';
+                    charSpan.style.background = '';
                 }
                 if (range[y][x].foreground) {
                     charSpan.style.color = range[y][x].foreground;
                 } else {
-                    charSpan.style.color = 'inherit';
+                    charSpan.style.color = '';
                 }
                 if (range[y][x].invert) {
                     charSpan.style.filter = 'invert(1)';
@@ -1446,25 +1455,17 @@ class ViApplication extends TerminalApplication {
                 let charSpan = this.#cells[y][x];
                 this.#terminal.setSymbol(y, x, range[y][x]?.symbol ?? '');
                 if (this.#view.cursorAt(this.#cursor, y, x)) {
-                    this.#terminal.setInvert(y, x, true);
-                    this.#terminal.setBackground(y, x, 'inherit');
-                    this.#terminal.setForeground(y, x, 'inherit');
-
-                    //charSpan.classList.add('cursor');
+                    this.#terminal.setClasses(y, x, ['cursor']);
                     if (!spaceColumn) {
                         spaceColumn = range[y][x]?.spaceColumn ?? x;
                     }
                 } else if (this.#view.selectedAt(this.#cursor, y, x)) {
-                    this.#terminal.setBackground(y, x, '#bbf');
-                    this.#terminal.setForeground(y, x, '#000');
+                    this.#terminal.setClasses(y, x, ['selected']);
                     this.#terminal.setInvert(y, x, false);
                 } else if (this.#view.highlightAt(this.#cursor, y, x)) {
-                    this.#terminal.setBackground(y, x, '#040');
-                    this.#terminal.setForeground(y, x, '#fff');
+                    this.#terminal.setClasses(y, x, ['highlight']);
                 } else {
-                    this.#terminal.setInvert(y, x, false);
-                    this.#terminal.setBackground(y, x, 'inherit');
-                    this.#terminal.setForeground(y, x, 'inherit');
+                    this.#terminal.setClasses(y, x, []);
                 }
             }
         }
