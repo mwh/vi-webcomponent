@@ -1,4 +1,4 @@
-// Copyright (C) 2024 Michael Homer
+// Copyright (C) 2024-2025 Michael Homer
 
 class ViWindow extends HTMLElement {
     static formAssociated = true;
@@ -37,7 +37,7 @@ class ViWindow extends HTMLElement {
         this.#elementInternals.setFormValue(this.#buffer.toString());
         let link = document.createElement('link');
         link.setAttribute('rel', 'stylesheet');
-        link.setAttribute('href', 'vi.css');
+        link.setAttribute('href', new URL('./vi.css', import.meta.url).href);
         this.#shadowRoot.appendChild(link);
         let container = document.createElement('div');
         this.#container = container;
@@ -61,10 +61,12 @@ class ViWindow extends HTMLElement {
 
         this.#cells[0][0].textContent = '';
         this.#view.cellWidth = this.#cells[0][0].offsetWidth + 1;
-        setTimeout(() => {
+        const updateCellWidth = () => {
             this.#view.cellWidth = this.#cells[0][0].offsetWidth + 1;
             this.redraw();
-        }, 0)
+        }
+        setTimeout(updateCellWidth, 0);
+        setTimeout(updateCellWidth, 50);
         this.mode = 'normal';
         this.tabIndex = -1;
         this.addEventListener('keydown', this.#onKeyDown.bind(this));
@@ -128,6 +130,7 @@ class ViWindow extends HTMLElement {
                 });
             }
         }
+        this.#view.cellWidth = this.#cells[0][0].offsetWidth + 1;
         this.redraw();
     }
 
@@ -828,6 +831,7 @@ class ViWindow extends HTMLElement {
     }
 
     redraw() {
+        if (!this.#container) return;
         this.#view.layOut();
         let range = this.#view.lines;
         let spaceColumn;
@@ -3361,6 +3365,24 @@ class ViBufferView {
             for (let i = 0; i < padding; i++) {
                 if (!this.down())
                     break;
+            }
+        }
+        // Crude approximation
+        let wrappedLines = 0;
+        for (let i = this.#start; i < cursor.line - 1; i++) {
+            let line = this.#buffer.lines[i];
+            if (line.length > this.#cols)
+                wrappedLines += Math.ceil(line.length / this.#cols) - 1;
+        }
+        if (wrappedLines) {
+            while (this.#start + this.#rows - wrappedLines - 1 < cursor.line) {
+                this.down();
+                wrappedLines = 0;
+                for (let i = this.#start; i < cursor.line - 1; i++) {
+                    let line = this.#buffer.lines[i];
+                    if (line.length > this.#cols)
+                        wrappedLines += Math.ceil(line.length / this.#cols) - 1;
+                }
             }
         }
     }
