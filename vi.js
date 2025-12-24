@@ -109,6 +109,16 @@ class ViWindow extends HTMLElement {
         this.redraw();
     }
 
+    get location() {
+        return {line: this.#cursor.line, column: this.#cursor.column};
+    }
+
+    set location(loc) {
+        this.#cursor.move(loc.line, loc.column);
+        this.#view.ensureVisible(this.#cursor);
+        this.redraw();
+    }
+
     #recreate() {
         if (!this.#container)
             return;
@@ -217,10 +227,16 @@ class ViWindow extends HTMLElement {
         } else if (text == '' && range) {
             this.#cursor.move(range.end.line, range.end.column);
         } else if (text == 'w' || text == 'write') {
-            this.dispatchEvent(new CustomEvent('write', {detail: {range: range, text: this.value}, bubbles: true}));
+            let detail = {range: range, text: this.value}
+            this.dispatchEvent(new CustomEvent('write', {detail, bubbles: true}));
+            if (detail.message)
+                this.#displayMessage(detail.message);
         } else {
-            if (this.dispatchEvent(new CustomEvent('ex', {detail: {range: range, command: text}, bubbles: true, cancelable: true})))
+            let detail = {range: range, command: text}
+            if (this.dispatchEvent(new CustomEvent('ex', {detail, bubbles: true, cancelable: true})))
                 this.#displayMessage('Unknown ex command: ' + initText);
+            if (detail.message)
+                this.#displayMessage(detail.message);
         }
     }
 
@@ -503,6 +519,8 @@ class ViWindow extends HTMLElement {
         } else if (command.operation == 'displayInformation') {
             let lines = this.#buffer.lines;
             this.#displayMessage(lines.length + ' lines ' + Math.floor(this.#cursor.line / lines.length * 100) + '%');
+        } else if (command.operation.startsWith('tab-')) {
+            this.dispatchEvent(new CustomEvent('tab-command', {detail: {command: command.operation}, bubbles: true}));
         } else {
             console.log('Unhandled command', command.operation);
         }
@@ -3536,6 +3554,8 @@ class Key {
             command.register = this._register;
         if (this._character)
             command.operand.character = this._character;
+        if (this._count !== undefined)
+            command.operand.count = this._count;
         return this._next;
     }
     operation(operation) {
@@ -3568,6 +3588,10 @@ class Key {
     }
     character(character) {
         this._character = character;
+        return this;
+    }
+    count(countTarget) {
+        this._count = countTarget;
         return this;
     }
     then(...following) {
@@ -3719,6 +3743,12 @@ const operator = oneOf(
     key('m').operation('mark').then(key("'"), character),
 );
 
+const normalg = oneOf(
+    key('g').motion('gotoLine').count(1),
+    key('t').operation('tab-next'),
+    key('T').operation('tab-previous'),
+)
+
 const visualCommands = oneOf(
     key('Escape').operation('normal-mode'),
     register,
@@ -3816,7 +3846,8 @@ const normalCommands = oneOf(
         key('J').motion('down-skip'),
         key('K').motion('up-skip'),
         key('u').operation('undo-cursor'),
-    )
+    ),
+    key('g').then(normalg),
 );
 
 
