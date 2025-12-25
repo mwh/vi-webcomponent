@@ -29,18 +29,21 @@ class ViWindow extends HTMLElement {
         this.#view = new ViBufferView(this.#buffer, 0, this.#rows - 2);
         this.#cursor = this.#buffer.getCursor();
         this.#command = new ViCommand();
+        this.#container = document.createElement('div');
+        this.addEventListener('keydown', this.#onKeyDown.bind(this));
     }
 
     connectedCallback() {
-        this.#shadowRoot = this.attachShadow({mode:'open'});
-        this.#elementInternals = this.attachInternals();
+        if (!this.#shadowRoot)
+            this.#shadowRoot = this.attachShadow({mode:'open'});
+        if (!this.#elementInternals)
+            this.#elementInternals = this.attachInternals();
         this.#elementInternals.setFormValue(this.#buffer.toString());
         let link = document.createElement('link');
         link.setAttribute('rel', 'stylesheet');
         link.setAttribute('href', new URL('./vi.css', import.meta.url).href);
         this.#shadowRoot.appendChild(link);
-        let container = document.createElement('div');
-        this.#container = container;
+        let container = this.#container;
         container.classList.add('vi-window');
         this.#shadowRoot.appendChild(container);
         for (let y = 0; y < this.#rows; y++) {
@@ -69,7 +72,6 @@ class ViWindow extends HTMLElement {
         setTimeout(updateCellWidth, 50);
         this.mode = 'normal';
         this.tabIndex = -1;
-        this.addEventListener('keydown', this.#onKeyDown.bind(this));
     }
 
     attributeChangedCallback(name, oldvalue, newvalue) {
