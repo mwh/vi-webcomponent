@@ -46,21 +46,7 @@ class ViWindow extends HTMLElement {
         let container = this.#container;
         container.classList.add('vi-window');
         this.#shadowRoot.appendChild(container);
-        for (let y = 0; y < this.#rows; y++) {
-            let row = [];
-            this.#cells.push(row);
-            for (let x = 0; x < this.#cols; x++) {
-                let charSpan = document.createElement('span');
-                charSpan.classList.add('vi-char');
-                container.appendChild(charSpan);
-                charSpan.style.gridRow = y + 1;
-                charSpan.style.gridColumn = x + 1;
-                row.push(charSpan);
-                charSpan.addEventListener('click', (event) => {
-                    this.#onClick(event, x + 1, y + 1);
-                });
-            }
-        }
+        this.#recreate();
 
         this.#cells[0][0].textContent = '';
         this.#view.cellWidth = this.#cells[0][0].offsetWidth + 1;
