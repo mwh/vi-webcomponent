@@ -228,6 +228,11 @@ class ViWindow extends HTMLElement {
         }
     }
 
+    displayError(message) {
+        this.#displayMessage('Error: ' + message);
+        this.redraw();
+    }
+
     runNormal(command) {
         if (command.operand.screenMotion) {
             command.mergeCounts();
@@ -1185,9 +1190,14 @@ class ViBuffer {
                 }
             },
             deleteLine: (line) => {
+                if (this.#lines.length == 1) {
+                    let ret = this.#lines[0];
+                    this.#lines[0] = [];
+                    return [ret];
+                }
                 let ret = this.#lines.splice(line - 1, 1);
                 for (let cursor of this.#cursors) {
-                    if (cursor.line > line) {
+                    if (cursor.line > line || cursor.line >= this.#lines.length) {
                         cursor.up();
                     }
                 }
